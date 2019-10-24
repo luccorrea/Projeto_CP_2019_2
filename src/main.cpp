@@ -120,51 +120,58 @@ struct shaderGlobals
 
 struct Triangle
 {
-	BSDF bsdf;
+	BSDF * bsdf;
 	Vertex vertices [3];
 	
 	Triangle() {}
 	
-	Triangle(BSDF bsdf, Vertex *vertices) {
+	Triangle(BSDF *  bsdf, Vertex *vertices) {
 		this->bsdf = bsdf;
 		this->vertices[0] = vertices[0];
 		this->vertices[1] = vertices[1];
 		this->vertices[2] = vertices[2];
 	}
 	
-	intersection intersects(ray Ray)
-	{
-		const float EPSILON = 0.0000001;
-	    Vector3 vertex0 = vertices[0].position;
-	    Vector3 vertex1 = vertices[1].position;
-	    Vector3 vertex2 = vertices[2].position;
-	    Vector3 edge1, edge2, h, s, q;
-	    float a,f,u,v;
-	    edge1 = vertex1 - vertex0;
-	    edge2 = vertex2 - vertex0;
-	    h = Ray.direction.cross(edge2);
-	    a = edge1.dot(h);
-	    if (abs(a) < EPSILON)
-	        return intersection();    // This ray is parallel to this triangle.
-	    f = 1.0/a;
-	    s = Ray.origin - vertex0;
-	    u = f * s.dot(h);
-	    if (u < 0.0 || u > 1.0)
-	        return intersection();
-	    q = s.cross(edge1);
-	    v = f * Ray.direction.dot(q);
-	    if (v < 0.0 || u + v > 1.0)
-	        return intersection();
-	    // At this stage we can compute t to find out where the intersection point is on the line.
-	    float t = f * edge2.dot(q);
-	    if (t > EPSILON && t < 1/EPSILON) // ray intersection
-	    {
-	        //bool hit, float distance, size_t index
-	        return intersection(true,t,-1);
-	    }
-	    else // This means that there is a line intersection but not a ray intersection.
-        return intersection();
-	}
+	bool intersects(
+    	const ray & Ray, intersection & Intersection) const {
+        const Vector3 & v0 = vertices[0].position;
+        const Vector3 & v1 = vertices[1].position;
+        const Vector3 & v2 = vertices[2].position;
+        
+        Vector3 u = v1 - v0;
+        Vector3 v = v2 - v0;
+        
+        Vector3 p = Ray.direction.cross(v);
+        float d = u.dot(p);
+        
+        if (std::abs(d) < AURORA_EPSILON)
+            return false;
+        
+        Vector3 t = Ray.origin - v0;
+        float inverseD = 1.0f / d;
+        
+        float alpha = t.dot(p) * inverseD;
+        
+        if (alpha < 0.0f || alpha > 1.0f)
+            return false;
+            
+        Vector3 q = t.cross(u);
+        
+        float beta = Ray.direction.dot(q) * inverseD;
+        
+        if (beta < 0.0f || alpha + beta > 1.0f)
+            return false;
+        
+        float t0 = v.dot(q) * inverseD;
+        
+        if (t0 < AURORA_EPSILON)
+            return false;
+        
+        Intersection.hit = true;
+        Intersection.distance = t0;
+        
+        return true;
+    }
 	
 	shaderGlobals calculateShaderGlobals(intersection Intersection ,ray Ray)
 	{
@@ -183,17 +190,17 @@ struct Triangle
 struct Scene {
     std::vector<Triangle*> triangles;
     
-    Scene();
+    Scene() {}
     Scene(const std::vector<Triangle *> & triangles) {
         this->triangles = triangles;
     }
     
     bool intersects(ray Ray, intersection & Intersection) const {
         for (int i = 0; i < triangles.size(); i++) {
-            Triangle * Triangle = triangles[i];
+            Triangle * triangle = triangles[i];
             
             intersection temp;
-            Triangle->intersects(Ray);
+            triangle->intersects(Ray,temp);
             
             if (temp.hit && temp.distance < Intersection.distance) {
                 Intersection.hit = temp.hit;
@@ -206,31 +213,134 @@ struct Scene {
     }
 };
 
+struct film 
+{
+	float width;
+	float height;
+	
+	film() {}
+	film(float width, float height)
+	{
+		this->width = width;
+		this->height = height;
+	}
+	
+	float aspectRatio()
+	{
+		return width/height;
+		
+	}
+};
+
+
+struct camera
+{
+	float fieldOfView;
+	film Film;
+	Matrix4 worldMatrix;
+	
+	camera() {}
+	
+	camera(float fieldOfView, film Film, Matrix4 worldMatrix)
+	{
+		this->fieldOfView = fieldOfView;
+		this->Film = Film;
+		this->worldMatrix = worldMatrix;
+	}
+	
+	void lookAt(Vector3 position, Vector3 target, Vector3 up)
+	{
+		Vector3 W = (position - target).normalize();
+		Vector3 U = W.cross(up).normalize();
+		Vector3 V = W.cross(U);
+		
+		worldMatrix[0][0]= U.x;
+		worldMatrix[0][1]= U.y;
+		worldMatrix[0][2]= U.z;
+		worldMatrix[0][3]= 0;
+		
+		worldMatrix[1][0]= V.x;
+		worldMatrix[1][1]= V.y;
+		worldMatrix[1][2]= V.z;
+		worldMatrix[1][3]= 0;
+		
+		worldMatrix[2][0]= W.x;
+		worldMatrix[2][1]= W.y;
+		worldMatrix[2][2]= W.z;
+		worldMatrix[2][3]= 0;
+		
+		worldMatrix[3][0]= position.x;
+		worldMatrix[3][1]= position.y;
+		worldMatrix[3][2]= position.z;
+		worldMatrix[3][3]= 1;
+	}
+	
+	ray generateRay (float x,float y, Vector2 sample)
+	{
+		float xndc = (x + 0.5)/Film.width;
+		float yndc = (y + 0.5)/Film.height;
+		
+		float xscreen = 2*xndc - 1;
+		float yscreen = 1 - 2*yndc;
+		
+		float a = Film.width/Film.height;
+			
+		float d = tan(fieldOfView/2);
+		
+		float xc = a * d * xscreen;
+		float yc = d * yscreen;
+		float zc = -1;
+		
+		Vector3 vetor = Vector3(xc,yc,zc);
+		
+		Vector3 pLinha = vetor * worldMatrix;
+		
+		Vector3 p;
+		p *= worldMatrix;
+		
+		ray R;
+		
+		R.direction = (pLinha - p).normalize();
+		R.origin = p;
+		
+		return R;
+		
+	}
+	
+};
+
 int main(int argc, char ** argv) {
-    Vertex v0;
-	Vertex v1;
-	Vertex v2;
+    Vertex v[3];
 	
-	v0.position = Vector3(0.0, 0.0, 0.0);
-	v0.normal = Vector3(0.0, 0.0, 1.0);
-	v0.uv = Vector2(0.0, 0.0);
+	v[0].position = Vector3(0.0, 0.0, 0.0);
+	v[0].normal = Vector3(0.0, 0.0, 1.0);
+	v[0].uv = Vector2(0.0, 0.0);
 	
-	v1.position = Vector3(2.0, 0.0, 0.0);
-	v1.normal = Vector3(0.0, 0.0, 1.0);
-	v1.uv = Vector2(1.0, 0.0);
+	v[1].position = Vector3(2.0, 0.0, 0.0);
+	v[1].normal = Vector3(0.0, 0.0, 1.0);
+	v[1].uv = Vector2(1.0, 0.0);
 	
-	v2.position = Vector3(1.0, 2.0, 0.0);
-	v2.normal = Vector3(0.0, 0.0, 1.0);
-	v2.uv = Vector2(0.0, 1.0);
+	v[2].position = Vector3(1.0, 2.0, 0.0);
+	v[2].normal = Vector3(0.0, 0.0, 1.0);
+	v[2].uv = Vector2(0.0, 1.0);
 	
-	ray r0;
+	Matrix4 matriz;
 	
-	r0.origin = Vector3(1.0, 1.0, 10.0);
-	r0.direction = Vector3(0.0, 0.0, -1.0);
+	film Film = film(800,600);
+	camera Camera = camera(radians(45),Film,matriz);
+	
+	Camera.lookAt(Vector3(1,1,35),Vector3(1,1,0),Vector3(0,1,0));
+	
+	
+	ray r0 = Camera.generateRay(400, 300, Vector2(0,0));
+	
+	cout<<"Raio: "<<r0.origin<<endl;
+	cout<<"Direction: "<<r0.direction<<endl;
+	
 	
 	Color3 red(1.0, 0.0, 0.0);
 	BSDF * diffuse = new BSDF (BSDFType::Diffuse, red);
-	Triangle* t = new Triangle (diffuse, Vector3(v0,v1,v2));
+	Triangle* t = new Triangle(diffuse, v);
 	
 	vector<Triangle*> triangles = {t};
 	
@@ -240,8 +350,15 @@ int main(int argc, char ** argv) {
 	
 	scene.intersects(r0, Intersection); 
 	
+	
 	if(Intersection.hit){
-		cout<<"Ponto: " <<Intersection.distance<<endl;
+		cout<<"Distance: " <<Intersection.distance<<endl;
+		Triangle* triangle = scene.triangles[Intersection.index];
+		
+		shaderGlobals ShaderGlobals = triangle->calculateShaderGlobals(Intersection,r0);
+		
+		cout<<"ponto: "<<ShaderGlobals.point<<endl;
+		
 	}
 	else cout<<"Sem intersecao!"<<endl;
 	
