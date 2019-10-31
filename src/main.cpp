@@ -309,6 +309,97 @@ struct camera
 	
 };
 
+struct renderOptions
+{
+	int width;
+	int height;
+	int maximumDepth;
+	int cameraSamples;
+	int lightSamples;
+	int diffuseSamples;
+	float filterWidth;
+	float gamma;
+	float exposure;
+	
+	renderOptions() {}
+	
+	renderOptions(
+	int width,
+	int height,
+	int maximumDepth,
+	int cameraSamples,
+	int lightSamples,
+	int diffuseSamples,
+	float filterWidth,
+	float gamma,
+	float exposure)
+	{
+		this->width=width;
+		this->height=height;
+		this->maximumDepth=maximumDepth;
+		this->cameraSamples=cameraSamples;
+		this->lightSamples=lightSamples;
+		this->diffuseSamples=diffuseSamples;
+		this->filterWidth=filterWidth;
+		this->gamma=gamma;
+		this->exposure=exposure;	
+	}	
+};
+
+struct renderer
+{
+	renderOptions options;
+	camera Camera;
+	Scene scene;
+	
+	renderer() {}
+	
+	renderer(renderOptions options, camera Camera, Scene scene)
+	{
+		this->options=options;
+		this->Camera=Camera;
+		this->scene=scene;
+	}
+	
+	Color3 computerDirectIllumination(BSDF bsdf, shaderGlobals shaderglobals)
+	{
+		
+	}
+	
+	Color3 computerIndirectIllumination(BSDF bsdf, shaderGlobals shaderglobals, int depth)
+	{
+         	return Color3();	
+	}
+	
+	Color3 trace(ray Ray, int depth)
+	{
+		intersection Intersection;
+
+		if (scene->intersects(Ray, Intersection)) {
+            		const Shape * shape = scene->shapes[intersection.index];
+            	const BSDF * bsdf = shape->bsdf;
+            
+            	if (bsdf->type == BSDFType::Light)
+                	return bsdf->color;
+            	else if (bsdf->type == BSDFType::Diffuse) {
+                	ShaderGlobals shaderGlobals;
+                	shape->calculateShaderGlobals(Ray, Intersection, shaderGlobals);
+                
+                	return computeDirectIllumination(bsdf, shaderGlobals);
+            	}
+	}
+	
+	image3 render()
+	{
+		
+	}
+	
+	
+	
+	
+};
+
+
 int main(int argc, char ** argv) {
     Vertex v[3];
 	
