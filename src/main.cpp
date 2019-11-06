@@ -176,7 +176,23 @@ struct Triangle
 	shaderGlobals calculateShaderGlobals(intersection Intersection ,ray Ray)
 	{
 		shaderGlobals sg;
+		
 		sg.point = Ray.point(Intersection.distance);
+		
+		Vector3 b = barycentric(sg.point, vertices[0].position, vertices[1].position, vertices[2].position);
+        
+        sg.normal = (vertices[0].normal * b.x + vertices[1].normal * b.y + vertices[2].normal * b.z).normalize();
+        sg.uv = vertices[0].uv * b.x + vertices[1].uv * b.y + vertices[2].uv * b.z;
+        
+        sg.uv = Vector2(b.x, b.y);
+        
+        calculateTangents(
+            sg.normal,
+            sg.tangentU,
+            sg.tangentV);
+        
+        sg.viewDirection = -Ray.direction;
+       
 		return sg;
 	}
 	
@@ -277,8 +293,8 @@ struct camera
 	
 	ray generateRay (float x,float y, Vector2 sample)
 	{
-		float xndc = (x + 0.5)/Film.width;
-		float yndc = (y + 0.5)/Film.height;
+		float xndc = (x + 0.5 + sample.x)/Film.width;
+		float yndc = (y + 0.5 + sample.y)/Film.height;
 		
 		float xscreen = 2*xndc - 1;
 		float yscreen = 1 - 2*yndc;
@@ -363,35 +379,52 @@ struct renderer
 	
 	Color3 computerDirectIllumination(BSDF bsdf, shaderGlobals shaderglobals)
 	{
-		
+		return Color3();
 	}
 	
-	Color3 computerIndirectIllumination(BSDF bsdf, shaderGlobals shaderglobals, int depth)
+	Color3 computerIndirectIllumination(BSDF bsdf, shaderGlobals sg, int depth)
 	{
-         	return Color3();	
+        return Color3();	
 	}
 	
 	Color3 trace(ray Ray, int depth)
 	{
 		intersection Intersection;
 
-		if (scene->intersects(Ray, Intersection)) {
-            		const Shape * shape = scene->shapes[intersection.index];
-            	const BSDF * bsdf = shape->bsdf;
-            
-            	if (bsdf->type == BSDFType::Light)
-                	return bsdf->color;
-            	else if (bsdf->type == BSDFType::Diffuse) {
-                	ShaderGlobals shaderGlobals;
-                	shape->calculateShaderGlobals(Ray, Intersection, shaderGlobals);
-                
-                	return computeDirectIllumination(bsdf, shaderGlobals);
-            	}
+		if (scene.intersects(Ray, Intersection)) {
+            	Triangle * triangle = scene.triangles[Intersection.index];
+            	BSDF * bsdf = triangle->bsdf;
+            	shaderGlobals sg = triangle->calculateShaderGlobals(Intersection, Ray);
+            	return Color3(sg.uv.x,sg.uv.y,0);
+		}
+		else
+			return Color3();
 	}
 	
-	image3 render()
+	Image3 render()
 	{
+		Image3 im(options.width, options.height);
 		
+		for(int i=0;i<options.width;i++)
+		{
+			for(int j=0;j<options.height;j++)
+			{
+				Color3 colorOutput(0.0, 0.0, 0.0);
+				
+				for(int k=0;k<options.cameraSamples;k++)
+				{
+					Vector2 s = Vector2(uniformRandom(),uniformRandom()) - Vector2(0.5,0.5);
+					ray Ray = Camera.generateRay(i,j,s);
+					colorOutput += trace(Ray, 0);
+				}
+				
+				colorOutput /= options.cameraSamples;
+				
+				im(i, j) = colorOutput;
+			}
+		}
+		
+		return im;
 	}
 	
 	
@@ -402,6 +435,8 @@ struct renderer
 
 int main(int argc, char ** argv) {
     Vertex v[3];
+    
+    renderOptions renderoptions(500, 500, 1, 4, 1, 1, 2, 2.2, 0);
 	
 	v[0].position = Vector3(0.0, 0.0, 0.0);
 	v[0].normal = Vector3(0.0, 0.0, 1.0);
@@ -417,17 +452,10 @@ int main(int argc, char ** argv) {
 	
 	Matrix4 matriz;
 	
-	film Film = film(800,600);
+	film Film = film(500,500);
 	camera Camera = camera(radians(45),Film,matriz);
 	
-	Camera.lookAt(Vector3(1,1,35),Vector3(1,1,0),Vector3(0,1,0));
-	
-	
-	ray r0 = Camera.generateRay(400, 300, Vector2(0,0));
-	
-	cout<<"Raio: "<<r0.origin<<endl;
-	cout<<"Direction: "<<r0.direction<<endl;
-	
+	Camera.lookAt(Vector3(1,1,35),Vector3(1,1,0),Vector3(0,1,0));			
 	
 	Color3 red(1.0, 0.0, 0.0);
 	BSDF * diffuse = new BSDF (BSDFType::Diffuse, red);
@@ -435,23 +463,13 @@ int main(int argc, char ** argv) {
 	
 	vector<Triangle*> triangles = {t};
 	
-	Scene scene (triangles);
+	Scene scene (triangles);	
 	
-	intersection Intersection;
+	renderer render(renderoptions, Camera, scene); 
 	
-	scene.intersects(r0, Intersection); 
+	Image3 m = render.render();
 	
-	
-	if(Intersection.hit){
-		cout<<"Distance: " <<Intersection.distance<<endl;
-		Triangle* triangle = scene.triangles[Intersection.index];
-		
-		shaderGlobals ShaderGlobals = triangle->calculateShaderGlobals(Intersection,r0);
-		
-		cout<<"ponto: "<<ShaderGlobals.point<<endl;
-		
-	}
-	else cout<<"Sem intersecao!"<<endl;
+	writeImage("output.ppm",&m);
 	
 	delete t;
 	delete diffuse;
