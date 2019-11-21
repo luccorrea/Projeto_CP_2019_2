@@ -12,6 +12,13 @@
 using namespace aurora;
 using namespace std;
 
+float uniformRandom1D() {
+    return uniformRandom();
+}
+Vector2 uniformRandom2D() {
+    return Vector2(uniformRandom1D(), uniformRandom1D());
+}
+
 struct intersection 
 {
 	bool hit;
@@ -186,15 +193,23 @@ struct Triangle
         
         sg.uv = Vector2(b.x, b.y);
         
-        calculateTangents(
-            sg.normal,
-            sg.tangentU,
-            sg.tangentV);
+        calculateTangents(sg.normal,sg.tangentU,sg.tangentV);
+	
         
         sg.viewDirection = -Ray.direction;
        
 		return sg;
 	}
+	
+	virtual Vector3 uniformSample(const Vector2 & sample) const {
+        const Vector3 & v0 = vertices[0].position;
+        const Vector3 & v1 = vertices[1].position;
+        const Vector3 & v2 = vertices[2].position;
+        
+        Vector3 b = uniformSampleTriangle(sample);
+        
+        return b.x * v0 + b.y * v1 + b.z * v2;
+    }
 	
 	float surfaceArea()
 	{
@@ -205,6 +220,7 @@ struct Triangle
 
 struct Scene {
     std::vector<Triangle*> triangles;
+    std::vector<Triangle *> lightGroup;
     
     Scene() {}
     Scene(const std::vector<Triangle *> & triangles) {
@@ -379,7 +395,31 @@ struct renderer
 	
 	Color3 computerDirectIllumination(BSDF bsdf, shaderGlobals shaderglobals)
 	{
-		return Color3();
+		if(scene.lightGroup.size() == 0)
+		{
+			return Color3();
+		}
+		else
+		{
+			int index = uniformRandom() * (scene.lightGroup.size() - 1);
+			Triangle * light = scene.lightGroup[index];
+			
+			shaderglobals.lightPoint =  light->uniformSample(uniformRandom2D());
+			
+			Vector3 wi = shaderglobals.lightPoint - shaderglobals.point;
+			float distance2 = wi.length2();
+			wi.normalize();
+			
+			ray Ray(shaderglobals.point,wi); 
+			
+			intersection Intersection;
+			scene.intersects(Ray,Intersection);
+			shaderGlobals sglight = light.calculateShaderGlobals(Intersection,Ray);
+			
+		}
+		
+		
+		return bsdf.color;
 	}
 	
 	Color3 computerIndirectIllumination(BSDF bsdf, shaderGlobals sg, int depth)
@@ -395,7 +435,7 @@ struct renderer
             	Triangle * triangle = scene.triangles[Intersection.index];
             	BSDF * bsdf = triangle->bsdf;
             	shaderGlobals sg = triangle->calculateShaderGlobals(Intersection, Ray);
-            	return Color3(sg.uv.x,sg.uv.y,0);
+            	return computerDirectIllumination(*bsdf,sg);
 		}
 		else
 			return Color3();
@@ -424,6 +464,8 @@ struct renderer
 			}
 		}
 		
+		
+		
 		return im;
 	}
 	
@@ -433,22 +475,42 @@ struct renderer
 };
 
 
+
+
 int main(int argc, char ** argv) {
-    Vertex v[3];
+	
+    Vertex v1[3];
+    Vertex v2[3];
     
     renderOptions renderoptions(500, 500, 1, 4, 1, 1, 2, 2.2, 0);
 	
-	v[0].position = Vector3(0.0, 0.0, 0.0);
-	v[0].normal = Vector3(0.0, 0.0, 1.0);
-	v[0].uv = Vector2(0.0, 0.0);
+	v1[0].position = Vector3(0.0, 0.0, 0.0);
+	v1[0].normal = Vector3(0.0, 0.0, 1.0);
+	v1[0].uv = Vector2(0.0, 0.0);
 	
-	v[1].position = Vector3(2.0, 0.0, 0.0);
-	v[1].normal = Vector3(0.0, 0.0, 1.0);
-	v[1].uv = Vector2(1.0, 0.0);
+	v1[1].position = Vector3(2.0, 0.0, 0.0);
+	v1[1].normal = Vector3(0.0, 0.0, 1.0);
+	v1[1].uv = Vector2(1.0, 0.0);
 	
-	v[2].position = Vector3(1.0, 2.0, 0.0);
-	v[2].normal = Vector3(0.0, 0.0, 1.0);
-	v[2].uv = Vector2(0.0, 1.0);
+	v1[2].position = Vector3(1.0, 2.0, 0.0);
+	v1[2].normal = Vector3(0.0, 0.0, 1.0);
+	v1[2].uv = Vector2(0.0, 1.0);
+	//////
+	v2[0].position = Vector3(2.0, 0.0, 10.0);
+	v2[0].normal = Vector3(0.0, 0.0, 1.0);
+	v2[0].uv = Vector2(0.0, 0.0);
+	
+	v2[1].position = Vector3(4.0, 0.0, 10.0);
+	v2[1].normal = Vector3(0.0, 0.0, 1.0);
+	v2[1].uv = Vector2(1.0, 0.0);
+	
+	v2[2].position = Vector3(3.0, 2.0, 10.0);
+	v2[2].normal = Vector3(0.0, 0.0, 1.0);
+	v2[2].uv = Vector2(0.0, 1.0);
+	
+	Color3 white(1.0, 1.0, 1.0);
+	BSDF * light = new BSDF (BSDFType::Light, white);
+	
 	
 	Matrix4 matriz;
 	
@@ -459,11 +521,14 @@ int main(int argc, char ** argv) {
 	
 	Color3 red(1.0, 0.0, 0.0);
 	BSDF * diffuse = new BSDF (BSDFType::Diffuse, red);
-	Triangle* t = new Triangle(diffuse, v);
+	Triangle* t1 = new Triangle(diffuse, v1);
+	Triangle* t2 = new Triangle(light, v2);
 	
-	vector<Triangle*> triangles = {t};
+	vector<Triangle*> triangles = {t1,t2};
+
 	
-	Scene scene (triangles);	
+	Scene scene (triangles);
+	scene.lightGroup.push_back(t2);
 	
 	renderer render(renderoptions, Camera, scene); 
 	
@@ -471,8 +536,10 @@ int main(int argc, char ** argv) {
 	
 	writeImage("output.ppm",&m);
 	
-	delete t;
+	delete t1;
+	delete t2;
 	delete diffuse;
+	delete light;
     
 	return 0;
 }

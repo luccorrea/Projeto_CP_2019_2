@@ -285,6 +285,16 @@ size_t time() {
     return (size_t)std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
 }
 
+void calculateTangents(
+        const Vector3 & normal, Vector3 & tangentU, Vector3 & tangentV) {
+    if (std::abs(normal.x) >= std::abs(normal.y))
+        tangentU = Vector3(normal.z, 0.0f, -normal.x).normalize();
+    else
+        tangentU = Vector3(0.0f, -normal.z, normal.y).normalize();
+    
+    tangentV = normal.cross(tangentU);
+}
+
 void randomSeed(size_t seed) {
     std::srand(seed);
 }

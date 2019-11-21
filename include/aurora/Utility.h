@@ -71,6 +71,10 @@ void randomSeed(size_t seed);
 double uniformRandom();
 // Retorna amostra aletória uniforme (ponto 2D) dentro de círculo de raio unitário
 Vector2 uniformSampleDisk(const Vector2 & sample);
+
+void calculateTangents(
+        const Vector3 & normal, Vector3 & tangentU, Vector3 & tangentV);
+        
 // Retorna amostra aletória concêntrica (ponto 2D) dentro de círculo de raio unitário
 Vector2 concentricSampleDisk(const Vector2 & sample);
 // Retorna amostra aleatória uniforme (vetor de direção 3D) em hemisfério de raio unitário
